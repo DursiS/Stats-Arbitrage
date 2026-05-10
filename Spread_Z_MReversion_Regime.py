@@ -24,7 +24,7 @@ def get_price_spread(t1: str, t2: str) -> ndarray:
     over the past year."""
     prices1 = get_prices(t1)
     prices2 = get_prices(t2)
-    return np.abs(prices1 - prices2)
+    return np.abs(prices1 - prices2)[20:]
 
 
 def get_z_scores(t1: str, t2: str) -> ndarray:
@@ -40,12 +40,35 @@ def visualize(t1: str, t2: str) -> None:
     """Plot Z-Score, mean and spread."""
     z = get_z_scores(t1, t2) * 100
     spread = get_price_spread(t1, t2)
-    mean = np.ones(251) * spread.mean()
-    day = [i for i in range(251)]
+    mean = np.ones(len(spread)) * spread.mean()
+    day = [i for i in range(len(spread))]
 
     plt.plot(day, spread, label="Spread ($)")
     plt.plot(day, z, label="Z Score * 100")
     plt.plot(day, mean, label="Spread Mean ($)")
+
+
+def get_returns(ticker: str) -> np.ndarray:
+    """Return the returns of <ticker> over a year
+
+    Precondition: <ticker> is a valid stock ticker
+    """
+    data = yf.download(ticker, period=f"1y")
+    prices = data["Close"].iloc[:, 0]
+    return np.log(prices / prices.shift(1))
+
+
+def get_rolling_corr(t1: str, t2: str, window: int = 20) -> list[float]:
+    """Return a list of all the rolling correlations
+    of windows sized <window>."""
+    returns1 = get_returns(t1)
+    returns2 = get_returns(t2)
+
+    corr = []
+    for i in range(len(returns1) - window):
+        coef = np.corrcoef(returns1[i : i + window], returns2[i : i + window])
+        corr.append(coef[1][0])
+    return corr
 
 
 def get_signals(t1: str, t2: str) -> list[tuple[float, float]]:
@@ -55,14 +78,15 @@ def get_signals(t1: str, t2: str) -> list[tuple[float, float]]:
     """
     z = get_z_scores(t1, t2)
     spread = get_price_spread(t1, t2)
+    corr = get_rolling_corr(t1, t2)
     day = [i for i in range(251)]
 
     signals = []
     for i in range(len(z)):
-        if z[i] >= 2:
-            signals.append((day[i], spread[i], True))
-        if z[i] <= -2:
+        if z[i] >= 2 and corr[i] > 0.8:
             signals.append((day[i], spread[i], False))
+        if z[i] <= -2 and corr[i] > 0.8:
+            signals.append((day[i], spread[i], True))
     return signals
 
 
@@ -84,7 +108,8 @@ def plot_signals(t1: str, t2: str) -> None:
 
 
 if __name__ == "__main__":
-    t1, t2 = "PEP", "KO"
+    # t1, t2 = "PEP", "KO"
+    t1, t2 = ("V", "MA")
     visualize(t1, t2)
     plot_signals(t1, t2)
     plt.legend()
